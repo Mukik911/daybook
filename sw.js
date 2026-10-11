@@ -1,6 +1,6 @@
 // Daybook service worker: offline app shell.
 // Bump VERSION whenever you deploy changed files so clients pick them up.
-const VERSION = "daybook-v6";
+const VERSION = "daybook-v7";
 const SHELL = [
   "./",
   "./index.html",

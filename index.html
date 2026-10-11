@@ -70,6 +70,7 @@
 
   <nav class="tabs" role="tablist" aria-label="Views">
     <button type="button" role="tab" id="tab-tasks" data-view="tasks" aria-selected="true">Tasks</button>
+    <button type="button" role="tab" id="tab-proc" data-view="proc" aria-selected="false">Processes</button>
     <button type="button" role="tab" id="tab-archive" data-view="archive" aria-selected="false">Archive</button>
     <button type="button" role="tab" id="tab-stats" data-view="stats" aria-selected="false">Analytics</button>
     <button type="button" role="tab" id="tab-log" data-view="log" aria-selected="false">Activity</button>
@@ -158,6 +159,11 @@
           <input id="f-dod" name="dod" maxlength="250" placeholder="e.g. Report sent and receipt confirmed">
         </div>
         <div class="field">
+          <label for="f-owner">Waiting on (person or team)</label>
+          <input id="f-owner" name="owner" maxlength="80" list="owner-list" placeholder="e.g. Legal, Finance, Pragmatic Play">
+          <datalist id="owner-list"><option value="Legal"><option value="Finance"><option value="QA"><option value="Design"><option value="Provider"></datalist>
+        </div>
+        <div class="field">
           <label for="f-notes">Notes / links</label>
           <textarea id="f-notes" name="notes" maxlength="4000" placeholder="Context, links, who's involved"></textarea>
         </div>
@@ -189,6 +195,7 @@
           <button class="chip" type="button" data-f="q2" aria-pressed="false">Schedule</button>
           <button class="chip" type="button" data-f="q3" aria-pressed="false">Delegate</button>
           <button class="chip" type="button" data-f="q4" aria-pressed="false">Later</button>
+          <button class="chip" type="button" data-f="waiting" aria-pressed="false">Waiting on others</button>
         </div>
       </div>
       <div id="list" aria-live="polite"></div>
@@ -208,6 +215,21 @@
       </details>
     </section>
   </main>
+
+  <section class="view" id="view-proc" aria-labelledby="proc-h" hidden>
+    <div class="toolbar">
+      <h2 id="proc-h">Processes</h2>
+      <span class="stats" id="proc-stats"></span>
+    </div>
+    <p class="hint">Your repeating work as ready-made steps. Set a process up once and Daybook puts every step in your calendar, with hand-offs to other teams tracked as "Waiting on".</p>
+    <h3 class="sec-h">Recurring</h3>
+    <div class="proc-grid" id="proc-recurring"></div>
+    <div class="sec-row">
+      <h3 class="sec-h">Game releases</h3>
+      <button class="btn btn-primary btn-sm" type="button" id="btn-new-release">Start a release</button>
+    </div>
+    <div id="proc-runs"></div>
+  </section>
 
   <section class="view" id="view-archive" aria-labelledby="arch-h" hidden>
     <div class="toolbar">
@@ -291,6 +313,26 @@
   <div class="toast" id="toast" role="status" hidden></div>
   <div class="tip" id="tip" role="tooltip" hidden></div>
 </div>
+
+<dialog id="proc-dlg" aria-labelledby="pd-title">
+  <form method="dialog" class="settings-form proc-form" id="pd-form" novalidate>
+    <h2 id="pd-title"></h2>
+    <p class="hint" id="pd-intro"></p>
+    <div class="pd-fields" id="pd-fields"></div>
+    <div class="pd-steps-wrap">
+      <table class="pd-steps">
+        <thead><tr><th>Step</th><th>Date</th><th>Start</th><th>Length</th><th>Waiting on</th></tr></thead>
+        <tbody id="pd-steps"></tbody>
+      </table>
+    </div>
+    <p class="hint" id="pd-note"></p>
+    <p class="err" id="pd-err" hidden></p>
+    <div class="actions">
+      <button class="btn btn-primary" type="button" id="pd-create">Create</button>
+      <button class="btn btn-ghost" value="cancel">Cancel</button>
+    </div>
+  </form>
+</dialog>
 
 <dialog id="settings">
   <form method="dialog" class="settings-form" id="settings-form">

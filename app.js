@@ -19,7 +19,8 @@ const DAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", 
 const GROUPS = ["Overdue", "Today", "Tomorrow", "Next 7 days", "Later", "Done today"];
 const LOG_CAP = 30; // history entries kept per task (stored on the Outlook event)
 const FIELD_LABEL = { title: "Title", quad: "Priority", cat: "Area", energy: "Energy", date: "Date", time: "Start",
-  dur: "Duration", remind: "Reminder", repeat: "Repeat", dod: "Done when", notes: "Notes", busy: "Show as" };
+  dur: "Duration", remind: "Reminder", repeat: "Repeat", dod: "Done when", notes: "Notes", busy: "Show as",
+  owner: "Waiting on" };
 
 // ───────────────────────── helpers ─────────────────────────
 const $ = (s) => document.querySelector(s);
@@ -259,7 +260,16 @@ async function graph(method, path, body) {
 function metaOf(t) {
   return { v: 1, quad: t.quad, cat: t.cat, energy: t.energy, dod: t.dod, notes: t.notes,
            done: !!t.done, doneAt: t.doneAt || null, dur: t.dur, date: t.date, createdAt: t.createdAt || null,
+           owner: t.owner || "", project: t.project || null, step: t.step ?? null,
            log: (t.log || []).slice(-LOG_CAP) };
+}
+
+// Outlook categories: Daybook, done state, and the process name so you can filter in Outlook too.
+function categoriesFor(t) {
+  const cats = [CATEGORY];
+  if (t.done) cats.push(DONE_CATEGORY);
+  if (t.project && t.project.label) cats.push(`Daybook · ${t.project.label}`);
+  return cats;
 }
 
 // ── activity log ──
@@ -317,6 +327,8 @@ function eventBody(t) {
   return [
     `Priority: ${QUAD[t.quad]}`,
     `Area: ${t.cat} · Energy: ${ENERGY[t.energy] || t.energy}`,
+    t.project ? `Process: ${t.project.name}` : "",
+    t.owner ? `Waiting on: ${t.owner}` : "",
     t.dod ? `Done when: ${t.dod}` : "",
     t.notes ? `\n${t.notes}` : "",
     "\n— Added from Daybook",
@@ -330,7 +342,7 @@ function taskToEvent(t, { includeRecurrence = true } = {}) {
     isAllDay: !t.time,
     showAs: t.busy ? "busy" : "free",
     isReminderOn: t.remind >= 0,
-    categories: t.done ? [CATEGORY, DONE_CATEGORY] : [CATEGORY],
+    categories: categoriesFor(t),
     singleValueExtendedProperties: [{ id: PROP_ID, value: JSON.stringify(metaOf(t)) }],
   };
   if (t.remind >= 0) ev.reminderMinutesBeforeStart = t.remind;
@@ -378,6 +390,7 @@ function eventToTask(ev) {
     done: !!meta.done || (ev.categories || []).includes(DONE_CATEGORY),
     doneAt: meta.doneAt || null, createdAt: meta.createdAt || null,
     log: Array.isArray(meta.log) ? meta.log : [],
+    owner: meta.owner || "", project: meta.project || null, step: meta.step ?? null,
   };
 }
 
@@ -481,7 +494,7 @@ async function setDone(t, done) {
   state.outlook = state.outlook.map((x) => (x.id === t.id ? next : x)); render();
   try {
     await graph("PATCH", `/me/events/${encodeURIComponent(t.eventId)}`, {
-      categories: done ? [CATEGORY, DONE_CATEGORY] : [CATEGORY],
+      categories: categoriesFor(next),
       singleValueExtendedProperties: [{ id: PROP_ID, value: JSON.stringify(metaOf(next)) }],
     });
     saveCache();
@@ -544,6 +557,7 @@ function matches(t) {
   // Finished tasks stay on the list for the rest of the day, then live in the Archive.
   if (t.done && doneDay(t) !== todayStr()) return false;
   if (f.startsWith("q") && t.quad !== f) return false;
+  if (f === "waiting" && !t.owner) return false;
   if (state.query) {
     const q = state.query.toLowerCase();
     if (![t.title, t.notes, t.dod, t.cat].some((s) => (s || "").toLowerCase().includes(q))) return false;
@@ -582,6 +596,8 @@ function taskRow(t, example = false) {
       el("div", { class: "t-meta" },
         el("span", { class: "tag" }, QUAD[t.quad]),
         el("span", { class: "cat" }, t.cat),
+        t.project ? el("span", { class: "proc-chip", title: t.project.name }, t.project.label) : null,
+        t.owner && !t.done ? el("span", { class: "owner-chip" }, `Waiting on ${t.owner}`) : null,
         el("span", { class: late ? "late" : "" }, t.repeat !== "none" ? `${REPEAT[t.repeat]} from ${fmtDate(t.date)}` : fmtDate(t.date)),
         el("span", { class: "t-time" }, timeTxt),
         el("span", {}, ENERGY[t.energy] || ""),
@@ -933,7 +949,7 @@ function startEdit(t) {
   form.remind.value = String(remind);
   if (t.repeat === "custom") form.repeat.append(el("option", { value: "custom" }, "Custom (set in Outlook)"));
   form.repeat.value = t.repeat || "none";
-  form.dod.value = t.dod || ""; form.notes.value = t.notes || "";
+  form.dod.value = t.dod || ""; form.notes.value = t.notes || ""; form.owner.value = t.owner || "";
   form.busy.checked = t.busy !== false;
   $("#form-h").textContent = "Edit task";
   $("#btn-save").textContent = signedIn() && t.eventId ? "Save changes to Outlook" : "Save changes";
@@ -960,7 +976,9 @@ form.addEventListener("submit", async (e) => {
     title, quad: form.quad.value, cat: form.cat.value, energy: form.energy.value,
     date: form.date.value, time: form.time.value || "", dur: Number(form.dur.value),
     remind: Number(form.remind.value), repeat: form.repeat.value, busy: form.busy.checked,
-    dod: form.dod.value.trim(), notes: form.notes.value.trim(),
+    dod: form.dod.value.trim(), notes: form.notes.value.trim(), owner: form.owner.value.trim(),
+    project: state.editing ? state.editing.project || null : null,
+    step: state.editing ? state.editing.step ?? null : null,
     done: state.editing ? !!state.editing.done : false,
     doneAt: state.editing ? state.editing.doneAt || null : null,
     createdAt: state.editing ? state.editing.createdAt || null : new Date().toISOString(),
@@ -1055,12 +1073,12 @@ function historyItems(log) {
 }
 
 function setView(v) {
-  if (!["tasks", "archive", "stats", "log"].includes(v)) v = "tasks";
+  if (!["tasks", "proc", "archive", "stats", "log"].includes(v)) v = "tasks";
   state.view = v;
   document.body.dataset.view = v;
   ls.set("daybook.view", v);
   document.querySelectorAll(".tabs [role=tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.view === v)));
-  for (const id of ["archive", "stats", "log"]) $(`#view-${id}`).hidden = v !== id;
+  for (const id of ["proc", "archive", "stats", "log"]) $(`#view-${id}`).hidden = v !== id;
   if (v !== "tasks") closeForm();
   renderView();
 }
@@ -1068,6 +1086,7 @@ function renderView() {
   if (state.view === "archive") renderArchive();
   else if (state.view === "stats") renderStats();
   else if (state.view === "log") renderLog();
+  else if (state.view === "proc") renderProcesses();
 }
 
 // ── archive ──
@@ -1422,6 +1441,268 @@ function showTip(e) {
 document.addEventListener("pointermove", showTip);
 document.addEventListener("pointerdown", showTip);
 document.addEventListener("scroll", () => (tip.hidden = true), true);
+
+// ───────────────────────── processes ─────────────────────────
+// Working-day arithmetic: n > 0 moves forward, n < 0 backward, skipping Saturdays and Sundays.
+function workdayShift(date, n) {
+  let d = date;
+  const dir = n < 0 ? -1 : 1;
+  for (let left = Math.abs(n); left > 0;) { d = dateShift(d, dir); if (!isWeekend(d)) left--; }
+  return d;
+}
+const nextWeekday = (d) => { while (isWeekend(d)) d = dateShift(d, 1); return d; };
+function nextWeekdayNamed(dow) { // 1 = Monday
+  let d = todayStr();
+  for (let i = 0; i < 7; i++) { const [y, m, dd] = d.split("-").map(Number); if (new Date(y, m - 1, dd).getDay() === dow) return d; d = dateShift(d, 1); }
+  return d;
+}
+function nextDayOfMonth(day) {
+  const n = new Date();
+  const thisMonth = new Date(n.getFullYear(), n.getMonth(), day);
+  return ymd(n.getDate() <= day ? thisMonth : new Date(n.getFullYear(), n.getMonth() + 1, day));
+}
+
+const TEMPLATES = [
+  {
+    id: "daily-reports", name: "Daily reports", short: "Daily reports", kind: "recurring",
+    cadence: "Every weekday", desc: "Update the Excel report, then check the BI dashboard against it.",
+    start: () => nextWeekday(todayStr()), repeat: "weekdays",
+    steps: [
+      { title: "Update daily Excel report", quad: "q1", cat: "Work", energy: "light", time: "09:30", dur: 45, dod: "Report updated and shared with the team" },
+      { title: "Check BI dashboard and flag anomalies", quad: "q1", cat: "Work", energy: "light", time: "10:15", dur: 30, dod: "BI matches Excel; any gaps reported" },
+    ],
+  },
+  {
+    id: "weekly-planning", name: "Weekly planning", short: "Weekly planning", kind: "recurring",
+    cadence: "Every Monday", desc: "Close last week, empty the inbox, chase hand-offs, set the week's top 3 outcomes.",
+    start: () => nextWeekdayNamed(1), repeat: "weekly",
+    steps: [
+      { title: "Weekly planning", quad: "q2", cat: "Work", energy: "deep", time: "09:00", dur: 45,
+        dod: "Top 3 outcomes chosen and focus time blocked",
+        notes: "1. Last week: tick off what's done, reschedule what slipped.\n2. Check \"Waiting on others\" and chase anything overdue.\n3. Check upcoming game releases and invoice dates.\n4. Pick this week's top 3 outcomes.\n5. Block focus time in the calendar for Schedule tasks." },
+    ],
+  },
+  {
+    id: "invoice-approvals", name: "Invoice approvals", short: "Invoice approvals", kind: "recurring",
+    cadence: "3rd of every month", desc: "Collect provider invoices, check them against BI, approve and pass to Finance.",
+    start: () => nextDayOfMonth(3), repeat: "monthly",
+    note: "Outlook keeps a monthly series on the 3rd even when it falls on a weekend; move single occurrences in Outlook when needed.",
+    steps: [
+      { title: "Collect provider invoices", quad: "q1", cat: "Finance", energy: "admin", time: "10:00", dur: 30, owner: "Providers", dod: "All invoices for last month received" },
+      { title: "Check invoices against BI figures", quad: "q1", cat: "Finance", energy: "deep", time: "10:30", dur: 60, dod: "Amounts reconciled; disputes listed" },
+      { title: "Approve invoices and send to Finance", quad: "q1", cat: "Finance", energy: "admin", time: "11:30", dur: 30, owner: "Finance", dod: "Approved invoices handed to Finance" },
+    ],
+  },
+  {
+    id: "game-release", name: "Game release", short: "Game release", kind: "run",
+    cadence: "When a provider delivers new games", desc: "Steps count back from the go-live date in working days. Legal and Finance sign-off is tracked as Waiting on.",
+    steps: [
+      { offset: -10, title: "Receive game package and certificates from {provider}", quad: "q1", cat: "Work", energy: "admin", time: "10:00", dur: 30, owner: "{provider}", dod: "Game files, RTP sheets and certificates received" },
+      { offset: -9, title: "Send games and certificates to Legal for approval", quad: "q3", cat: "Work", energy: "admin", time: "11:00", dur: 15, owner: "Legal", dod: "Legal has everything they need" },
+      { offset: -9, title: "Send commercial terms to Finance for approval", quad: "q3", cat: "Finance", energy: "admin", time: "11:15", dur: 15, owner: "Finance", dod: "Finance has fees and revenue share" },
+      { offset: -7, title: "Set up games in back office (staging)", quad: "q2", cat: "Work", energy: "light", time: "14:00", dur: 60, dod: "All games configured on staging" },
+      { offset: -5, title: "Test games on staging", quad: "q2", cat: "Work", energy: "deep", time: "10:00", dur: 90, dod: "Every game launches, plays and pays out correctly" },
+      { offset: -4, title: "Prepare thumbnails and lobby placement", quad: "q2", cat: "Work", energy: "light", time: "14:00", dur: 60, dod: "Thumbnails uploaded; lobby positions agreed" },
+      { offset: -3, title: "Follow up: Legal and Finance sign-off", quad: "q1", cat: "Work", energy: "admin", time: "10:00", dur: 15, owner: "Legal, Finance", dod: "Both approvals in writing" },
+      { offset: 0, title: "Go live: enable games in production", quad: "q1", cat: "Work", energy: "light", time: "11:00", dur: 30, dod: "Games visible and playable on the site" },
+      { offset: 1, title: "Post-release check and announce to the team", quad: "q2", cat: "Work", energy: "light", time: "10:00", dur: 30, dod: "Live check done; release note sent" },
+    ],
+  },
+];
+const PROVIDERS = ["Pragmatic Play", "Evolution", "EGT Digital", "Amusnet", "Playson", "NetEnt", "Play'n GO", "Hacksaw Gaming", "Spribe"];
+const tplById = (id) => TEMPLATES.find((t) => t.id === id);
+const processTasks = (pred) => allTasks().filter((t) => t.project && pred(t.project));
+
+// ── setup dialog ──
+const pdDlg = $("#proc-dlg");
+let pd = null; // { tpl, rows, provider, release, goLive }
+const fill = (s, provider) => s.replace(/\{provider\}/g, provider || "provider");
+
+function releaseRows() {
+  return pd.tpl.steps.map((s) => ({
+    ...s, title: fill(s.title, pd.provider), owner: s.owner ? fill(s.owner, pd.provider) : "",
+    date: workdayShift(pd.goLive, s.offset), repeat: "none",
+  }));
+}
+
+function openProcessSetup(tpl) {
+  pd = { tpl };
+  $("#pd-title").textContent = tpl.kind === "run" ? "Start a game release" : `Set up: ${tpl.name}`;
+  $("#pd-intro").textContent = tpl.kind === "run"
+    ? "Enter the provider and go-live date. Daybook counts the steps back from go-live in working days. Adjust any step before creating."
+    : `${tpl.cadence}. ${tpl.desc} These steps become repeating events in your calendar. Adjust times before creating.`;
+  $("#pd-note").textContent = tpl.note || (tpl.kind === "run" ? "Changing the provider or go-live date recalculates the steps." : "");
+  $("#pd-err").hidden = true;
+  const fields = $("#pd-fields"); fields.replaceChildren();
+  if (tpl.kind === "run") {
+    pd.provider = ""; pd.release = ""; pd.goLive = workdayShift(todayStr(), 10);
+    const provList = el("datalist", { id: "pd-prov-list" }, PROVIDERS.map((p) => el("option", { value: p })));
+    fields.append(
+      el("div", { class: "field" }, el("label", { for: "pd-provider" }, "Provider"),
+        el("input", { id: "pd-provider", list: "pd-prov-list", maxlength: "60", placeholder: "e.g. Pragmatic Play", required: true })),
+      provList,
+      el("div", { class: "field" }, el("label", { for: "pd-release" }, "Release name"),
+        el("input", { id: "pd-release", maxlength: "80", placeholder: "e.g. October batch, 6 slots" })),
+      el("div", { class: "field" }, el("label", { for: "pd-golive" }, "Go-live date"),
+        el("input", { id: "pd-golive", type: "date", value: pd.goLive, required: true })));
+    const recalc = () => {
+      pd.provider = $("#pd-provider").value.trim();
+      pd.release = $("#pd-release").value.trim();
+      pd.goLive = $("#pd-golive").value || pd.goLive;
+      pd.rows = releaseRows(); renderPdRows();
+    };
+    $("#pd-provider").addEventListener("input", recalc);
+    $("#pd-release").addEventListener("input", () => { pd.release = $("#pd-release").value.trim(); });
+    $("#pd-golive").addEventListener("change", recalc);
+    pd.rows = releaseRows();
+  } else {
+    const start = tpl.start();
+    pd.rows = tpl.steps.map((s) => ({ ...s, owner: s.owner || "", date: start, repeat: tpl.repeat }));
+  }
+  renderPdRows();
+  if (typeof pdDlg.showModal === "function") pdDlg.showModal(); else pdDlg.setAttribute("open", "");
+  setTimeout(() => ($("#pd-provider") || $("#pd-create")).focus(), 50);
+}
+
+function renderPdRows() {
+  const durOpts = [15, 30, 45, 60, 90, 120, 180, 240];
+  $("#pd-steps").replaceChildren(...pd.rows.map((r, i) => {
+    const bind = (key, cast = (v) => v) => (e) => { pd.rows[i][key] = cast(e.target.value); };
+    const opts = durOpts.includes(r.dur) ? durOpts : [...durOpts, r.dur].sort((a, b) => a - b);
+    return el("tr", {},
+      el("td", {}, el("input", { "aria-label": `Step ${i + 1} title`, value: r.title, maxlength: "200", oninput: bind("title") })),
+      el("td", {}, el("input", { type: "date", "aria-label": `Step ${i + 1} date`, value: r.date, onchange: bind("date") })),
+      el("td", {}, el("input", { type: "time", step: "900", "aria-label": `Step ${i + 1} start`, value: r.time, onchange: bind("time") })),
+      el("td", {}, el("select", { "aria-label": `Step ${i + 1} length`, onchange: bind("dur", Number) },
+        opts.map((d) => el("option", { value: String(d), selected: d === r.dur }, fmtDur(d))))),
+      el("td", {}, el("input", { "aria-label": `Step ${i + 1} waiting on`, value: r.owner, maxlength: "80", list: "owner-list", oninput: bind("owner") })));
+  }));
+  const n = pd.rows.length;
+  $("#pd-create").textContent = pd.tpl.kind === "run" ? `Create ${n} steps` : `Create ${n} repeating task${n > 1 ? "s" : ""}`;
+}
+
+async function createProcess() {
+  const err = $("#pd-err"); err.hidden = true;
+  const tpl = pd.tpl;
+  let project;
+  if (tpl.kind === "run") {
+    if (!pd.provider) { err.textContent = "Enter the provider, for example Pragmatic Play."; err.hidden = false; $("#pd-provider").focus(); return; }
+    const name = `Release: ${pd.release || "new games"} (${pd.provider})`;
+    project = { id: "rel-" + newId(), template: tpl.id, name, label: tpl.short, provider: pd.provider, goLive: pd.goLive };
+  } else {
+    project = { id: tpl.id, template: tpl.id, name: tpl.name, label: tpl.short };
+  }
+  if (pd.rows.some((r) => !r.title.trim() || !r.date)) { err.textContent = "Every step needs a title and a date."; err.hidden = false; return; }
+
+  const btn = $("#pd-create"); btn.disabled = true; btn.textContent = "Creating…";
+  let made = 0, failed = null;
+  for (const [i, r] of pd.rows.entries()) {
+    const t = withLog({
+      id: newId(), title: r.title.trim(), quad: r.quad, cat: r.cat, energy: r.energy,
+      date: r.date, time: r.time || "", dur: Number(r.dur), remind: 15, repeat: r.repeat || "none", busy: true,
+      dod: r.dod || "", notes: r.notes || "", owner: (r.owner || "").trim(), project, step: i + 1,
+      done: false, doneAt: null, createdAt: new Date().toISOString(), eventId: null, log: [],
+    }, { a: "created" });
+    const res = await createTask(t);
+    if (!res.ok) { failed = res.error; break; }
+    made++;
+  }
+  btn.disabled = false;
+  if (failed) { err.textContent = `${made} of ${pd.rows.length} created, then: ${failed}`; err.hidden = false; renderPdRows(); return; }
+  pdDlg.close();
+  toast(signedIn() ? `${made} steps added to your Outlook calendar` : `${made} steps saved on this device`);
+  renderChrome(); render();
+}
+
+// ── Processes view ──
+function stepLine(t) {
+  const late = !t.done && t.repeat === "none" && t.date < todayStr();
+  // Repeating steps have no checkbox: ticking would close the whole series, not today's occurrence.
+  return el("li", { class: `pstep${t.done ? " done" : ""}` },
+    t.repeat !== "none"
+      ? el("span", { class: "pstep-repeat", title: "Repeats" }, "↻")
+      : el("input", { type: "checkbox", class: "check", checked: !!t.done, "aria-label": `Mark "${t.title}" done`, onchange: (e) => setDone(t, e.target.checked) }),
+    el("button", { type: "button", class: "pstep-title", onclick: () => { setView("tasks"); startEdit(t); } }, t.title),
+    el("span", { class: `pstep-when${late ? " late" : ""}` }, `${t.repeat !== "none" ? REPEAT[t.repeat] + " · " : ""}${fmtDate(t.date)}${t.time ? " " + t.time : ""}`),
+    t.owner && !t.done ? el("span", { class: "owner-chip" }, t.owner) : el("span"));
+}
+
+function renderProcesses() {
+  // Recurring templates
+  const rec = $("#proc-recurring"); rec.replaceChildren();
+  for (const tpl of TEMPLATES.filter((x) => x.kind === "recurring")) {
+    const tasks = processTasks((p) => p.template === tpl.id).sort((a, b) => (a.step || 0) - (b.step || 0));
+    const active = tasks.length > 0;
+    const confirming = state.pendingDelete.has("proc:" + tpl.id);
+    rec.append(el("article", { class: `proc-card${active ? " active" : ""}` },
+      el("div", { class: "proc-head" },
+        el("div", {}, el("h4", {}, tpl.name), el("span", { class: "proc-cadence" }, tpl.cadence)),
+        el("span", { class: `badge ${active ? "ontime" : "idle"}` }, active ? "Active" : "Not set up")),
+      el("p", { class: "proc-desc" }, tpl.desc),
+      active ? el("ol", { class: "psteps" }, tasks.map(stepLine)) : null,
+      el("div", { class: "actions" },
+        active
+          ? (confirming
+              ? el("button", { type: "button", class: "btn btn-danger btn-sm", onclick: async () => {
+                  state.pendingDelete.delete("proc:" + tpl.id);
+                  for (const t of tasks) await deleteTask(t);
+                  toast(`${tpl.name} removed`);
+                } }, `Delete ${tasks.length} repeating task${tasks.length > 1 ? "s" : ""}`)
+              : el("button", { type: "button", class: "btn btn-ghost btn-sm", onclick: () => {
+                  state.pendingDelete.add("proc:" + tpl.id); renderProcesses();
+                  setTimeout(() => { if (state.pendingDelete.delete("proc:" + tpl.id)) renderProcesses(); }, 4000);
+                } }, "Remove"))
+          : el("button", { type: "button", class: "btn btn-primary btn-sm", onclick: () => openProcessSetup(tpl) }, "Set up"))));
+  }
+
+  // Release runs
+  const runs = new Map();
+  for (const t of processTasks((p) => p.template === "game-release")) {
+    if (!runs.has(t.project.id)) runs.set(t.project.id, { project: t.project, steps: [] });
+    runs.get(t.project.id).steps.push(t);
+  }
+  const list = [...runs.values()].map((r) => {
+    r.steps.sort((a, b) => (a.step || 0) - (b.step || 0));
+    r.done = r.steps.filter((t) => t.done).length;
+    r.complete = r.done === r.steps.length;
+    return r;
+  }).sort((a, b) => (a.complete - b.complete) || (a.project.goLive || "").localeCompare(b.project.goLive || ""));
+
+  const box = $("#proc-runs"); box.replaceChildren();
+  if (!list.length) {
+    box.append(el("p", { class: "empty" }, "No releases yet. When a provider says new games are ready, press Start a release."));
+  }
+  const today = todayStr();
+  for (const r of list) {
+    const next = r.steps.find((t) => !t.done);
+    const late = r.steps.filter((t) => !t.done && t.date < today).length;
+    const waiting = [...new Set(r.steps.filter((t) => !t.done && t.owner).flatMap((t) => t.owner.split(/\s*,\s*/)))];
+    const pct = Math.round((r.done / r.steps.length) * 100);
+    const daysToGo = r.project.goLive ? dayDiff(today, r.project.goLive) : null;
+    box.append(el("article", { class: `run-card${r.complete ? " complete" : ""}` },
+      el("div", { class: "proc-head" },
+        el("div", {}, el("h4", {}, r.project.name),
+          el("span", { class: "proc-cadence" }, r.project.goLive
+            ? `Go-live ${fmtDate(r.project.goLive)}${r.complete ? "" : daysToGo > 0 ? ` · in ${daysToGo} day${daysToGo > 1 ? "s" : ""}` : daysToGo === 0 ? " · today" : ` · ${-daysToGo} day${daysToGo < -1 ? "s" : ""} ago`}` : "")),
+        el("span", { class: `badge ${r.complete ? "ontime" : late ? "late" : "idle"}` },
+          r.complete ? "Released" : late ? `${late} step${late > 1 ? "s" : ""} late` : "On track")),
+      el("div", { class: "progress", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pct), "aria-label": "Release progress" },
+        el("i", { style: `width:${pct}%` })),
+      el("div", { class: "run-sum" },
+        el("span", {}, `${r.done} of ${r.steps.length} steps done`),
+        next ? el("span", {}, el("b", {}, "Next: "), `${next.title} (${fmtDate(next.date)})`) : null,
+        waiting.length ? el("span", {}, el("b", {}, "Waiting on: "), waiting.join(", ")) : null),
+      el("details", { class: "run-steps", open: !r.complete }, el("summary", {}, "Steps"),
+        el("ol", { class: "psteps" }, r.steps.map(stepLine)))));
+  }
+
+  const activeRuns = list.filter((r) => !r.complete).length;
+  const recActive = TEMPLATES.filter((x) => x.kind === "recurring" && processTasks((p) => p.template === x.id).length).length;
+  $("#proc-stats").textContent = `${recActive} recurring active · ${activeRuns} release${activeRuns === 1 ? "" : "s"} in progress`;
+}
+
+$("#btn-new-release").addEventListener("click", () => openProcessSetup(tplById("game-release")));
+$("#pd-create").addEventListener("click", createProcess);
 
 // ───────────────────────── wiring ─────────────────────────
 document.querySelectorAll(".tabs [role=tab]").forEach((b) => b.addEventListener("click", () => setView(b.dataset.view)));
