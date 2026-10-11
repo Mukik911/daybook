@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Daybook</title>
+  <meta name="description" content="Plan tasks with priorities and time blocks; every task lands in your Outlook calendar.">
+  <meta name="theme-color" content="#1F5F8B" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0F151C" media="(prefers-color-scheme: dark)">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="icons/favicon.png">
+  <!-- iOS home-screen app -->
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Daybook">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<section class="gate" id="gate" aria-labelledby="gate-h" hidden>
+  <div class="gate-card">
+    <img src="icons/icon-192.png" alt="" width="56" height="56">
+    <h1 id="gate-h">Sign in to Daybook</h1>
+    <p class="gate-sub">Use your work email to keep your tasks in sync with your Outlook calendar on every device.</p>
+    <form id="gate-form" novalidate>
+      <div class="field">
+        <label for="g-email">Email</label>
+        <input id="g-email" name="email" type="email" inputmode="email" autocomplete="username" autocapitalize="off" spellcheck="false" placeholder="name@company.com" required>
+      </div>
+      <p class="err" id="gate-err" role="alert" hidden></p>
+      <button class="btn btn-primary" type="submit" id="gate-submit">Continue</button>
+    </form>
+    <p class="hint">Next, Microsoft's sign-in page asks for your password. Daybook never sees or stores it.</p>
+    <button class="link-btn" type="button" id="gate-forgot" aria-expanded="false" aria-controls="gate-reset">Forgot your password?</button>
+    <div class="gate-reset" id="gate-reset" hidden>
+      <p>Your password belongs to your Microsoft account, so you reset it with Microsoft. You'll verify it's you with your phone, authenticator app or backup email, then come back here and sign in.</p>
+      <a class="btn btn-ghost" id="gate-reset-link" href="https://passwordreset.microsoftonline.com/" target="_blank" rel="noopener">Reset password with Microsoft ↗</a>
+      <p class="hint" id="gate-reset-note">Work account: if the reset page says it isn't available for you, your organization hasn't turned on self-service reset. Contact your IT helpdesk instead.</p>
+    </div>
+    <div class="gate-alt">
+      <button class="link-btn" type="button" id="gate-local">Use without an account (this device only)</button>
+      <button class="link-btn" type="button" id="gate-settings">Connection settings</button>
+    </div>
+  </div>
+</section>
+
+<div class="app">
+  <header class="bar">
+    <div class="brand">
+      <img src="icons/icon-192.png" alt="" width="30" height="30">
+      <span>Daybook</span>
+    </div>
+    <div class="bar-right">
+      <span class="status" id="status" data-kind="local">Local only</span>
+      <button class="icon-btn" id="btn-sync" type="button" title="Refresh from Outlook" aria-label="Refresh from Outlook" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <button class="btn btn-primary btn-sm" id="btn-signin" type="button">Sign in</button>
+      <button class="icon-btn" id="btn-settings" type="button" title="Settings" aria-label="Settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="banner" id="banner" hidden>
+    <span id="banner-text"></span>
+    <button class="btn btn-ghost btn-sm" id="banner-btn" type="button"></button>
+  </div>
+
+  <nav class="tabs" role="tablist" aria-label="Views">
+    <button type="button" role="tab" id="tab-tasks" data-view="tasks" aria-selected="true">Tasks</button>
+    <button type="button" role="tab" id="tab-archive" data-view="archive" aria-selected="false">Archive</button>
+    <button type="button" role="tab" id="tab-stats" data-view="stats" aria-selected="false">Analytics</button>
+    <button type="button" role="tab" id="tab-log" data-view="log" aria-selected="false">Activity</button>
+  </nav>
+
+  <main class="grid">
+    <section class="panel form-panel" id="form-panel" aria-labelledby="form-h">
+      <div class="form-head">
+        <h2 id="form-h">New task</h2>
+        <button class="icon-btn only-mobile" id="btn-close-form" type="button" aria-label="Close">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <p class="hint">Start with a verb and a clear result.</p>
+      <form id="task-form" novalidate autocomplete="off">
+        <div class="field">
+          <label for="f-title">Task</label>
+          <input id="f-title" name="title" maxlength="200" placeholder="e.g. Send Q4 provider report to the team" required>
+        </div>
+        <div class="field">
+          <span class="lbl" id="quad-lbl">Priority</span>
+          <div class="quad" role="radiogroup" aria-labelledby="quad-lbl">
+            <span class="q1"><input type="radio" name="quad" id="f-q1" value="q1"><label for="f-q1">Do now<small>Urgent · important</small></label></span>
+            <span class="q2"><input type="radio" name="quad" id="f-q2" value="q2" checked><label for="f-q2">Schedule<small>Important · not urgent</small></label></span>
+            <span class="q3"><input type="radio" name="quad" id="f-q3" value="q3"><label for="f-q3">Delegate<small>Urgent · less important</small></label></span>
+            <span class="q4"><input type="radio" name="quad" id="f-q4" value="q4"><label for="f-q4">Later / maybe<small>Neither</small></label></span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label for="f-cat">Area</label>
+            <select id="f-cat" name="cat">
+              <option>Work</option><option>Meetings</option><option>Personal</option><option>Health</option><option>Learning</option><option>Finance</option><option>Home</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="f-energy">Energy</label>
+            <select id="f-energy" name="energy">
+              <option value="deep">Deep focus</option><option value="light" selected>Light</option><option value="admin">Admin / quick</option>
+            </select>
+          </div>
+        </div>
+        <div class="row3">
+          <div class="field">
+            <label for="f-date">Date</label>
+            <input id="f-date" name="date" type="date" required>
+          </div>
+          <div class="field">
+            <label for="f-time">Start</label>
+            <input id="f-time" name="time" type="time" step="900">
+          </div>
+          <div class="field">
+            <label for="f-dur">Duration</label>
+            <select id="f-dur" name="dur">
+              <option value="15">15 min</option><option value="30" selected>30 min</option><option value="45">45 min</option><option value="60">1 h</option><option value="90">1.5 h</option><option value="120">2 h</option><option value="180">3 h</option><option value="240">4 h</option>
+            </select>
+          </div>
+        </div>
+        <div class="dayview" id="dayview" aria-labelledby="dv-title" hidden>
+          <div class="dv-head">
+            <span class="lbl" id="dv-title">Your calendar</span>
+            <span class="dv-load" id="dv-load"></span>
+          </div>
+          <div class="dv-verdict" id="dv-verdict" aria-live="polite" hidden></div>
+          <div class="dv-suggest" id="dv-suggest" hidden></div>
+          <div class="dv-allday" id="dv-allday"></div>
+          <div class="dv-scroll" id="dv-scroll" hidden><div class="dv-grid" id="dv-grid" title="Tap a free spot to pick that time"></div></div>
+          <p class="hint" id="dv-note"></p>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label for="f-remind">Reminder</label>
+            <select id="f-remind" name="remind">
+              <option value="-1">None</option><option value="0">At start</option><option value="5">5 min before</option><option value="15" selected>15 min before</option><option value="30">30 min before</option><option value="60">1 h before</option><option value="1440">1 day before</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="f-repeat">Repeat</label>
+            <select id="f-repeat" name="repeat">
+              <option value="none" selected>Doesn't repeat</option><option value="daily">Every day</option><option value="weekdays">Every weekday</option><option value="weekly">Every week</option><option value="monthly">Every month</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="f-dod">Done when…</label>
+          <input id="f-dod" name="dod" maxlength="250" placeholder="e.g. Report sent and receipt confirmed">
+        </div>
+        <div class="field">
+          <label for="f-notes">Notes / links</label>
+          <textarea id="f-notes" name="notes" maxlength="4000" placeholder="Context, links, who's involved"></textarea>
+        </div>
+        <details class="history" id="f-history" hidden>
+          <summary>History of this task</summary>
+          <ol class="log-list" id="f-history-list"></ol>
+        </details>
+        <label class="check-row" for="f-busy"><input type="checkbox" id="f-busy" name="busy" checked> Block this time as Busy in my calendar</label>
+        <p class="err" id="form-err" hidden></p>
+        <div class="actions">
+          <button class="btn btn-primary" type="submit" id="btn-save">Save task</button>
+          <button class="btn btn-ghost" type="button" id="btn-cancel-edit" hidden>Cancel edit</button>
+          <button class="btn btn-ghost" type="reset" id="btn-clear">Clear</button>
+        </div>
+        <p class="hint" id="save-hint">No start time = all-day event.</p>
+      </form>
+    </section>
+
+    <section class="list-col" aria-labelledby="list-h">
+      <div class="toolbar">
+        <h2 id="list-h">My tasks</h2>
+        <span class="stats" id="stats"></span>
+      </div>
+      <div class="filters">
+        <input type="search" id="search" placeholder="Search tasks" aria-label="Search tasks">
+        <div class="chips" id="task-chips" role="group" aria-label="Filter">
+          <button class="chip" type="button" data-f="open" aria-pressed="true">Open</button>
+          <button class="chip" type="button" data-f="q1" aria-pressed="false">Do now</button>
+          <button class="chip" type="button" data-f="q2" aria-pressed="false">Schedule</button>
+          <button class="chip" type="button" data-f="q3" aria-pressed="false">Delegate</button>
+          <button class="chip" type="button" data-f="q4" aria-pressed="false">Later</button>
+        </div>
+      </div>
+      <div id="list" aria-live="polite"></div>
+
+      <details class="guide" id="guide">
+        <summary>How to write and plan tasks well</summary>
+        <div class="guide-body">
+          <div><h4>Capture everything, fast</h4><p>More than 2 minutes? Into Daybook right away. Less than 2 minutes? Do it now. Your head is for thinking, not storing.</p></div>
+          <div><h4>Write the next physical action</h4><p>Not "Report" but "Draft section 2 of the Q4 report". Verb + object + result, and fill in <i>Done when…</i> so the finish line is obvious.</p></div>
+          <div><h4>Prioritize with the Eisenhower matrix</h4>
+            <div class="mx"><div class="q1"><b>Do now</b>Today, yourself</div><div class="q2"><b>Schedule</b>Block time — the most valuable zone</div><div class="q3"><b>Delegate</b>Hand off, set a check-in</div><div class="q4"><b>Later / maybe</b>Park it or drop it</div></div>
+          </div>
+          <div><h4>Time-block, don't just list</h4><p>A task with a date and a start time gets done far more often. Add ~25% buffer to estimates. Deep-focus work goes into your best-energy hours; batch admin into one block.</p></div>
+          <div><h4>Daily rhythm (10 min)</h4><p>Evening: pick tomorrow's 1–3 most important tasks. Morning: check the calendar and protect focus blocks. Leave ~30% of the day unplanned.</p></div>
+          <div><h4>Weekly review (Friday, 30 min)</h4><p>Tick off what's done, reschedule what slipped, clear the "Later" pile, and block next week's "Schedule" tasks first.</p></div>
+        </div>
+      </details>
+    </section>
+  </main>
+
+  <section class="view" id="view-archive" aria-labelledby="arch-h" hidden>
+    <div class="toolbar">
+      <h2 id="arch-h">Archive</h2>
+      <span class="stats" id="arch-stats"></span>
+    </div>
+    <p class="hint">Completed tasks. They stay in Outlook with the category "Daybook: done". Restore one to put it back on your list.</p>
+    <div class="filters filters-row">
+      <input type="search" id="arch-search" placeholder="Search completed tasks" aria-label="Search completed tasks">
+      <button class="btn btn-ghost btn-sm" type="button" id="arch-export">Export CSV</button>
+    </div>
+    <div id="arch-list"></div>
+  </section>
+
+  <section class="view" id="view-stats" aria-labelledby="stats-h" hidden>
+    <div class="toolbar">
+      <h2 id="stats-h">Analytics</h2>
+      <div class="chips" id="period-chips" role="group" aria-label="Period">
+        <button class="chip" type="button" data-p="7" aria-pressed="true">7 days</button>
+        <button class="chip" type="button" data-p="30" aria-pressed="false">30 days</button>
+        <button class="chip" type="button" data-p="90" aria-pressed="false">90 days</button>
+      </div>
+    </div>
+    <div class="kpis" id="kpis"></div>
+    <div class="cards">
+      <article class="card wide">
+        <div class="card-head"><h3>Workload · next 14 days</h3><span class="hint" id="wl-sub"></span></div>
+        <div class="legend" id="wl-legend">
+          <span><i class="sw sw-meet"></i>Meetings</span>
+          <span><i class="sw sw-task"></i>Daybook tasks</span>
+          <span><i class="sw sw-cap"></i>Working hours</span>
+        </div>
+        <div class="chart" id="wl-chart"></div>
+        <p class="insight" id="wl-insight"></p>
+        <details class="table-view"><summary>Show as table</summary><div class="tbl-wrap" id="wl-table"></div></details>
+      </article>
+      <article class="card">
+        <div class="card-head"><h3>Added vs completed</h3><span class="hint" id="flow-sub"></span></div>
+        <div class="legend">
+          <span><i class="sw sw-added"></i>Added</span>
+          <span><i class="sw sw-done"></i>Completed</span>
+        </div>
+        <div class="chart" id="flow-chart"></div>
+      </article>
+      <article class="card">
+        <div class="card-head"><h3>Planned time by priority</h3></div>
+        <div class="hbars" id="quad-chart"></div>
+        <p class="insight" id="quad-insight"></p>
+      </article>
+      <article class="card">
+        <div class="card-head"><h3>Planned time by area</h3></div>
+        <div class="hbars" id="area-chart"></div>
+      </article>
+      <article class="card">
+        <div class="card-head"><h3>Completed by energy</h3></div>
+        <div class="hbars" id="energy-chart"></div>
+      </article>
+    </div>
+  </section>
+
+  <section class="view" id="view-log" aria-labelledby="log-h" hidden>
+    <div class="toolbar">
+      <h2 id="log-h">Activity</h2>
+      <span class="stats" id="log-stats"></span>
+    </div>
+    <div class="chips" id="log-chips" role="group" aria-label="Filter activity">
+      <button class="chip" type="button" data-a="all" aria-pressed="true">All</button>
+      <button class="chip" type="button" data-a="created" aria-pressed="false">Created</button>
+      <button class="chip" type="button" data-a="edited" aria-pressed="false">Edited</button>
+      <button class="chip" type="button" data-a="completed" aria-pressed="false">Completed</button>
+      <button class="chip" type="button" data-a="reopened" aria-pressed="false">Restored</button>
+      <button class="chip" type="button" data-a="deleted" aria-pressed="false">Deleted</button>
+    </div>
+    <div id="log-list"></div>
+    <p class="hint">Each task's history is saved on its Outlook event, so it's the same on every device. Deletions are recorded on the device where they happened.</p>
+  </section>
+
+  <button class="fab only-mobile" id="fab" type="button" aria-label="New task">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+  </button>
+  <div class="toast" id="toast" role="status" hidden></div>
+  <div class="tip" id="tip" role="tooltip" hidden></div>
+</div>
+
+<dialog id="settings">
+  <form method="dialog" class="settings-form" id="settings-form">
+    <h2>Settings</h2>
+    <section>
+      <h3>Microsoft account</h3>
+      <p class="hint" id="acct-line">Not signed in.</p>
+      <div class="actions">
+        <a class="btn btn-ghost btn-sm" id="btn-change-pw" href="https://mysignins.microsoft.com/security-info/password/change" target="_blank" rel="noopener" hidden>Change password ↗</a>
+        <button class="btn btn-ghost btn-sm" type="button" id="btn-signout" hidden>Sign out</button>
+      </div>
+    </section>
+    <section>
+      <h3>Outlook connection</h3>
+      <p class="hint">From your app registration in Microsoft Entra ID. See SETUP.md.</p>
+      <div class="field"><label for="s-client">Application (client) ID</label><input id="s-client" placeholder="00000000-0000-0000-0000-000000000000" spellcheck="false"></div>
+      <div class="field"><label for="s-tenant">Tenant</label><input id="s-tenant" placeholder="organizations" spellcheck="false"></div>
+      <p class="hint">Redirect URI to register: <code id="s-redirect"></code></p>
+    </section>
+    <section>
+      <h3>Working hours</h3>
+      <p class="hint">Free-time suggestions stay inside these hours.</p>
+      <div class="row">
+        <div class="field"><label for="s-work-start">From</label><input id="s-work-start" type="time" step="900"></div>
+        <div class="field"><label for="s-work-end">To</label><input id="s-work-end" type="time" step="900"></div>
+      </div>
+      <label class="check-row" for="s-weekends"><input type="checkbox" id="s-weekends"> Suggest weekend days too</label>
+    </section>
+    <section>
+      <h3>Without sign-in</h3>
+      <div class="field">
+        <label for="s-acct">"Open in Outlook" links go to</label>
+        <select id="s-acct"><option value="work">Outlook for work (M365)</option><option value="personal">Outlook.com (personal)</option></select>
+      </div>
+    </section>
+    <p class="err" id="settings-err" hidden></p>
+    <div class="actions">
+      <button class="btn btn-primary" type="button" id="btn-settings-save">Save</button>
+      <button class="btn btn-ghost" value="cancel">Close</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="config.js"></script>
+<script src="vendor/msal-browser.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
