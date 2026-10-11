@@ -1,6 +1,9 @@
 // Daybook service worker: offline app shell.
-// Bump VERSION whenever you deploy changed files so clients pick them up.
-const VERSION = "daybook-v7";
+// Online, every request goes to the network first (revalidating past the browser's HTTP cache,
+// which GitHub Pages sets to 10 minutes), so a new deploy shows up on the next launch.
+// Offline, the last good copy is served from the cache.
+// Bump VERSION whenever you deploy changed files.
+const VERSION = "daybook-v8";
 const SHELL = [
   "./",
   "./index.html",
@@ -16,7 +19,11 @@ const SHELL = [
 ];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  e.waitUntil(
+    caches.open(VERSION)
+      .then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: "reload" }))))
+      .then(() => self.skipWaiting())
+  );
 });
 
 self.addEventListener("activate", (e) => {
@@ -33,33 +40,17 @@ self.addEventListener("fetch", (e) => {
   // Only handle our own GET requests; sign-in and Graph calls go straight to the network.
   if (req.method !== "GET" || url.origin !== self.location.origin) return;
 
-  if (req.mode === "navigate") {
-    // Network first so new versions arrive; fall back to the cached shell offline.
-    e.respondWith(
-      fetch(req)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(VERSION).then((c) => c.put("./index.html", copy));
-          return res;
-        })
-        .catch(() => caches.match("./index.html"))
-    );
-    return;
-  }
-
-  // Static files: serve from cache, refresh in the background.
+  // Pages share one cached shell, whatever their query string (?demo, sign-in redirects).
+  const key = req.mode === "navigate" ? "./index.html" : url.pathname;
   e.respondWith(
-    caches.match(req).then((cached) => {
-      const net = fetch(req)
-        .then((res) => {
-          if (res.ok) {
-            const copy = res.clone();
-            caches.open(VERSION).then((c) => c.put(req, copy));
-          }
-          return res;
-        })
-        .catch(() => cached);
-      return cached || net;
-    })
+    fetch(req.url, { cache: "no-cache", credentials: "same-origin" })
+      .then((res) => {
+        if (res.ok) {
+          const copy = res.clone();
+          caches.open(VERSION).then((c) => c.put(key, copy));
+        }
+        return res;
+      })
+      .catch(() => caches.match(key, { ignoreSearch: true }).then((hit) => hit || Response.error()))
   );
 });
